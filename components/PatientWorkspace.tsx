@@ -11,15 +11,17 @@ interface PatientWorkspaceProps {
   patient: Patient;
   onUpdate: (updated: Patient) => void;
   onBack: () => void;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
 }
 
-const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, onBack }) => {
-  const [activeTab, setActiveTab] = useState('summary');
+const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, onBack, activeTab, onTabChange }) => {
   const [selectedBattery, setSelectedBattery] = useState(TEST_BATTERIES[0].id);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newObs, setNewObs] = useState('');
   const [patterns, setPatterns] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analyzingBatteryId, setAnalyzingBatteryId] = useState<string | null>(null);
 
   const handleScoreChange = (batteryId: string, taskId: string, score: number) => {
     const updatedResults = { ...patient.testResults };
@@ -44,17 +46,25 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
     const results = patient.testResults[batteryId];
     if (!battery || !results) return;
 
-    const summary = await analyzeBatteryResult(battery.name, battery.tasks, results);
-    const updatedResults = { ...patient.testResults };
-    updatedResults[batteryId].aiSummary = summary;
-    onUpdate({ ...patient, testResults: updatedResults });
+    setAnalyzingBatteryId(batteryId);
+    try {
+      const summary = await analyzeBatteryResult(battery.name, battery.tasks, results);
+      const updatedResults = { ...patient.testResults };
+      updatedResults[batteryId].aiSummary = summary;
+      onUpdate({ ...patient, testResults: updatedResults });
+    } finally {
+      setAnalyzingBatteryId(null);
+    }
   };
 
   const triggerPatternRecognition = async () => {
     setIsAnalyzing(true);
-    const result = await findPatterns(patient.testResults, patient);
-    setPatterns(result);
-    setIsAnalyzing(false);
+    try {
+      const result = await findPatterns(patient.testResults, patient);
+      setPatterns(result);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const addObservation = () => {
@@ -65,82 +75,116 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
     }
   };
 
-  const generatePDF = (type: 'full' | 'battery' | 'final', targetBattery?: TestBattery) => {
+  const generatePDF = (type: 'history' | 'battery' | 'final', targetBattery?: TestBattery) => {
     const doc = new jsPDF();
     let y = 20;
     const margin = 20;
     const pageWidth = doc.internal.pageSize.getWidth();
 
-    const addText = (text: string, size = 12, bold = false) => {
+    const addText = (text: string, size = 11, bold = false) => {
       doc.setFont('helvetica', bold ? 'bold' : 'normal');
       doc.setFontSize(size);
-      const splitText = doc.splitTextToSize(text, pageWidth - margin * 2);
+      const splitText = doc.splitTextToSize(text || 'N/A', pageWidth - margin * 2);
       doc.text(splitText, margin, y);
-      y += (splitText.length * (size * 0.5)) + 5;
-      if (y > 280) { doc.addPage(); y = 20; }
+      y += (splitText.length * (size * 0.5)) + 4;
+      if (y > 275) { doc.addPage(); y = 20; }
     };
 
     const addTitle = (text: string) => {
-      y += 5;
-      doc.setDrawColor(200, 200, 200);
+      y += 6;
+      doc.setDrawColor(220, 220, 220);
       doc.line(margin, y - 5, pageWidth - margin, y - 5);
-      addText(text.toUpperCase(), 14, true);
+      addText(text.toUpperCase(), 12, true);
     };
 
-    // Header
-    doc.setFillColor(79, 70, 229); // Indigo 600
-    doc.rect(0, 0, pageWidth, 40, 'F');
-    doc.setTextColor(255, 255, 255);
-    doc.setFontSize(22);
-    doc.text('NeuroAI Clinic', margin, 20);
-    doc.setFontSize(10);
-    doc.text(`Informe Clínico: ${type === 'full' ? 'Historia Completa' : type === 'final' ? 'Cierre Clínico' : `Batería: ${targetBattery?.name}`}`, margin, 30);
-    doc.text(`Fecha: ${new Date().toLocaleDateString()}`, pageWidth - margin - 40, 30);
-    doc.setTextColor(0, 0, 0);
-    y = 55;
+    const cleanMd = (text: string) => text ? text.replace(/[#*]/g, '').trim() : 'N/A';
 
-    // Patient Data
+    // Header Background
+    doc.setFillColor(79, 70, 229); // Indigo
+    doc.rect(0, 0, pageWidth, 35, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    doc.text('NeuroAI Clinic - Informe Profesional', margin, 18);
+    doc.setFontSize(9);
+    doc.text(`TIPO: ${type === 'history' ? 'HISTORIA COMPLETA' : type === 'final' ? 'INFORME FINAL DE CIERRE' : `RESULTADOS BATERÍA: ${targetBattery?.name}`}`, margin, 27);
+    doc.text(`FECHA EMISIÓN: ${new Date().toLocaleDateString()}`, pageWidth - margin - 50, 27);
+    doc.setTextColor(0, 0, 0);
+    y = 45;
+
+    // SECTION 1: Patient Data (Common for all)
     addTitle('Información del Paciente');
-    addText(`Nombre: ${patient.name}`);
-    addText(`ID: ${patient.documentId} | Edad: ${patient.age} años | Lateralidad: ${patient.laterality}`);
+    addText(`Nombre: ${patient.name}`, 11, true);
+    addText(`Documento: ${patient.documentId} | Edad: ${patient.age} años | Lateralidad: ${patient.laterality}`);
     addText(`EPS: ${patient.eps} | Escolaridad: ${patient.schooling}`);
     addText(`Motivo de Consulta: ${patient.consultationReason}`);
 
-    if (type === 'full' || type === 'final') {
+    // LOGIC BY TYPE
+    if (type === 'history') {
       addTitle('Resumen de Baterías Aplicadas');
       Object.keys(patient.testResults).forEach(key => {
         const b = TEST_BATTERIES.find(x => x.id === key);
         if (b) {
-          addText(`- ${b.name}: ${patient.testResults[key].aiSummary || 'Sin resumen IA'}`);
+          addText(`${b.name}:`, 10, true);
+          addText(cleanMd(patient.testResults[key].aiSummary || 'Pendiente de análisis IA.'), 10);
+          y += 2;
         }
       });
-    }
+      if (Object.keys(patient.testResults).length === 0) addText('No se han aplicado baterías aún.');
 
-    if (type === 'battery' && targetBattery) {
-      addTitle(`Resultados: ${targetBattery.name}`);
+      addTitle('Diagnóstico Inicial');
+      addText(patient.diagnosisInitial || 'Sin diagnóstico inicial registrado.');
+
+      addTitle('Diagnóstico Final y Conclusiones');
+      addText(patient.finalDiagnosis || 'Pendiente de evaluación final.');
+
+      addTitle('Tratamiento y Plan Sugerido');
+      addText(patient.suggestedTreatment || 'Pendiente de definir plan de intervención.');
+    } 
+    else if (type === 'battery' && targetBattery) {
+      addTitle(`Detalle de Pruebas: ${targetBattery.name}`);
       const results = patient.testResults[targetBattery.id];
-      targetBattery.tasks.forEach(task => {
-        const score = results?.scores[task.id] || 0;
-        const response = results?.responses[task.id] || 'N/A';
-        addText(`${task.title}: ${score}/5`, 11, true);
-        addText(`Respuesta: ${response}`, 10);
-      });
-      if (results?.aiSummary) {
-        addTitle('Interpretación IA');
-        addText(results.aiSummary.replace(/[#*]/g, ''), 10);
+      if (results) {
+        targetBattery.tasks.forEach(task => {
+          const score = results.scores[task.id] || 0;
+          const resp = results.responses[task.id] || 'N/A';
+          addText(`- ${task.title}: ${score}/5`, 10, true);
+          addText(`  Obs/Resp: ${resp}`, 9);
+        });
+        addTitle('Interpretación Clínica (IA)');
+        addText(cleanMd(results.aiSummary || 'No hay análisis generado para esta batería.'), 10);
+      } else {
+        addText('Esta batería no ha sido aplicada a este paciente.');
       }
+    } 
+    else if (type === 'final') {
+      addTitle('Hallazgos y Reconocimiento de Patrones');
+      addText(cleanMd(patterns || 'No se ha ejecutado el análisis de patrones global.'), 10);
+
+      addTitle('Resumen Consolidado de Pruebas');
+      Object.keys(patient.testResults).forEach(key => {
+        const b = TEST_BATTERIES.find(x => x.id === key);
+        if (b) {
+          addText(`${b.name}:`, 10, true);
+          addText(cleanMd(patient.testResults[key].aiSummary || 'N/A'), 10);
+          y += 2;
+        }
+      });
+
+      addTitle('Veredicto Clínico Final');
+      addText(patient.finalDiagnosis || 'Pendiente.', 11, true);
+
+      addTitle('Recomendaciones de Tratamiento');
+      addText(patient.suggestedTreatment || 'Pendiente.');
     }
 
-    if (type === 'full' || type === 'final') {
-      addTitle('Análisis de Patrones y Conclusiones');
-      if (patterns) addText(patterns.replace(/[#*]/g, ''), 10);
-      addTitle('Diagnóstico Final');
-      addText(patient.finalDiagnosis || 'Pendiente');
-      addTitle('Tratamiento y Plan de Intervención');
-      addText(patient.suggestedTreatment || 'Pendiente');
-    }
+    if (y > 240) { doc.addPage(); y = 40; } else { y += 20; }
+    doc.setDrawColor(0, 0, 0);
+    doc.line(margin, y, margin + 60, y);
+    y += 5;
+    addText('Dra. Flor Marina', 10, true);
+    addText('Neuropsicóloga Infantil', 9);
 
-    doc.save(`NeuroAI_Report_${patient.name.replace(/\s+/g, '_')}_${type}.pdf`);
+    doc.save(`NeuroAI_${type}_${patient.name.replace(/\s+/g, '_')}.pdf`);
   };
 
   const currentBattery = TEST_BATTERIES.find(b => b.id === selectedBattery)!;
@@ -174,7 +218,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
         {['summary', 'tests', 'patterns', 'files', 'reports'].map(tab => (
           <button 
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => onTabChange(tab)}
             className={`px-6 py-2 rounded-lg text-sm font-semibold transition-all ${activeTab === tab ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
             {tab === 'reports' ? 'INFORMES' : tab.toUpperCase()}
@@ -183,7 +227,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
       </div>
 
       {activeTab === 'summary' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
           <div className="bg-white p-6 rounded-2xl border border-slate-200">
             <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">Diagnóstico y Motivo</h3>
             <div className="space-y-4">
@@ -216,13 +260,14 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
       )}
 
       {activeTab === 'tests' && (
-        <div className="flex flex-col lg:flex-row gap-6">
+        <div className="flex flex-col lg:flex-row gap-6 animate-in slide-in-from-bottom-4 duration-300">
           <aside className="lg:w-64 space-y-2">
             {TEST_BATTERIES.map(b => (
               <button 
                 key={b.id}
                 onClick={() => setSelectedBattery(b.id)}
-                className={`w-full text-left p-4 rounded-xl border transition-all ${selectedBattery === b.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-200'}`}
+                disabled={analyzingBatteryId !== null}
+                className={`w-full text-left p-4 rounded-xl border transition-all ${selectedBattery === b.id ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white border-slate-200 text-slate-600 hover:border-indigo-200'} ${analyzingBatteryId !== null ? 'opacity-50 cursor-not-allowed' : ''}`}
               >
                 <div className="text-xs font-bold opacity-70 mb-1">BATERÍA {TEST_BATTERIES.indexOf(b) + 1}</div>
                 <div className="font-bold text-sm leading-tight">{b.name}</div>
@@ -231,7 +276,15 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
           </aside>
 
           <main className="flex-1 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative">
+              {analyzingBatteryId === selectedBattery && (
+                <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] z-20 flex flex-col items-center justify-center rounded-2xl">
+                  <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
+                  <p className="text-indigo-700 font-bold text-sm">Analizando respuestas de la batería...</p>
+                  <p className="text-slate-400 text-[10px] mt-1 uppercase tracking-widest font-bold">Por favor espere</p>
+                </div>
+              )}
+              
               <div className="flex justify-between items-start mb-6">
                 <div>
                   <h3 className="text-xl font-bold text-slate-800">{currentBattery.name}</h3>
@@ -270,7 +323,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                       <input 
                         type="text" 
                         placeholder="Registro de respuesta..."
-                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
                         value={currentResult.responses[task.id] || ''}
                         onChange={(e) => handleResponseChange(selectedBattery, task.id, e.target.value)}
                       />
@@ -280,7 +333,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                           <button 
                             key={opt}
                             onClick={() => handleResponseChange(selectedBattery, task.id, opt)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${currentResult.responses[task.id] === opt ? 'bg-slate-800 text-white' : 'bg-white text-slate-500 hover:border-slate-300'}`}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${currentResult.responses[task.id] === opt ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 hover:border-slate-300'}`}
                           >
                             {opt}
                           </button>
@@ -299,9 +352,14 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                   </h4>
                   <button 
                     onClick={() => triggerAIAnalysis(selectedBattery)}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 transition-colors uppercase tracking-widest"
+                    disabled={analyzingBatteryId !== null}
+                    className={`text-xs font-bold transition-colors uppercase tracking-widest flex items-center gap-2 ${analyzingBatteryId ? 'text-slate-400 cursor-not-allowed' : 'text-indigo-600 hover:text-indigo-800'}`}
                   >
-                    Generar Análisis
+                    {analyzingBatteryId === selectedBattery ? (
+                      <><i className="fas fa-circle-notch fa-spin"></i> Analizando respuestas...</>
+                    ) : (
+                      <><i className="fas fa-magic"></i> Analizar Batería</>
+                    )}
                   </button>
                 </div>
                 {currentResult.aiSummary ? (
@@ -310,8 +368,8 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                     dangerouslySetInnerHTML={renderMarkdown(currentResult.aiSummary)}
                   />
                 ) : (
-                  <div className="bg-indigo-50/50 p-4 rounded-xl text-sm text-indigo-900 italic border border-indigo-100 leading-relaxed min-h-[60px]">
-                    Haga clic en 'Generar Análisis' para recibir una interpretación automática de estos resultados.
+                  <div className="bg-indigo-50/50 p-4 rounded-xl text-sm text-indigo-900 italic border border-indigo-100 leading-relaxed min-h-[60px] flex items-center justify-center">
+                    No se ha generado interpretación IA para esta prueba.
                   </div>
                 )}
               </div>
@@ -321,55 +379,71 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
       )}
 
       {activeTab === 'patterns' && (
-        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm min-h-[400px]">
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm min-h-[400px] animate-in fade-in duration-500">
           <div className="flex justify-between items-center mb-8">
             <div>
-              <h3 className="text-2xl font-bold text-slate-800">Reconocimiento de Patrones</h3>
-              <p className="text-slate-500">La IA analiza correlaciones entre todas las pruebas aplicadas.</p>
+              <h3 className="text-2xl font-bold text-slate-800">Reconocimiento de Patrones Global</h3>
+              <p className="text-slate-500">La IA analiza correlaciones de todas las pruebas para detectar síndromes o perfiles específicos.</p>
             </div>
-            <button 
-              onClick={triggerPatternRecognition}
-              disabled={isAnalyzing}
-              className={`px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold transition-all shadow-lg flex items-center gap-2 ${isAnalyzing ? 'opacity-50' : 'hover:scale-105 active:scale-95'}`}
-            >
-              {isAnalyzing ? <i className="fas fa-circle-notch fa-spin"></i> : <i className="fas fa-brain"></i>}
-              {isAnalyzing ? 'Analizando...' : 'Identificar Patrones'}
-            </button>
+            <div className="flex flex-col items-end gap-2">
+              <button 
+                onClick={triggerPatternRecognition}
+                disabled={isAnalyzing}
+                className={`px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold transition-all shadow-lg flex items-center gap-2 ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
+              >
+                {isAnalyzing ? <i className="fas fa-circle-notch fa-spin"></i> : <i className="fas fa-brain"></i>}
+                {isAnalyzing ? 'Correlacionando...' : 'Identificar Patrones'}
+              </button>
+              {isAnalyzing && (
+                <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-widest animate-pulse">
+                  Trabajando en el análisis de patrones...
+                </span>
+              )}
+            </div>
           </div>
 
           {!patterns && !isAnalyzing ? (
-            <div className="text-center py-20 opacity-30">
-              <i className="fas fa-puzzle-piece text-6xl mb-4"></i>
-              <p className="text-lg">No hay análisis de patrones todavía</p>
+            <div className="text-center py-20 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              <i className="fas fa-puzzle-piece text-5xl text-slate-200 mb-4"></i>
+              <p className="text-slate-400 font-medium">Aplique al menos 2 baterías y presione el botón para ver patrones clínicos.</p>
             </div>
           ) : isAnalyzing ? (
-            <div className="space-y-4 animate-pulse">
-              <div className="h-4 bg-slate-100 rounded w-3/4"></div>
-              <div className="h-4 bg-slate-100 rounded w-1/2"></div>
-              <div className="h-4 bg-slate-100 rounded w-full"></div>
+            <div className="space-y-6">
+              <div className="h-4 bg-slate-100 rounded w-3/4 animate-pulse"></div>
+              <div className="h-4 bg-slate-100 rounded w-1/2 animate-pulse"></div>
+              <div className="h-4 bg-slate-100 rounded w-full animate-pulse"></div>
+              <p className="text-center text-xs text-indigo-400 animate-pulse uppercase font-bold tracking-widest">Consultando experto virtual y procesando resultados...</p>
             </div>
           ) : (
-            <div className="prose prose-indigo max-w-none">
-              <div 
-                className="p-6 bg-slate-50 rounded-2xl border border-slate-200 text-slate-700 leading-relaxed font-serif text-lg markdown-content"
-                dangerouslySetInnerHTML={renderMarkdown(patterns)}
-              />
+            <div className="space-y-12">
+              <div className="prose prose-indigo max-w-none">
+                <div 
+                  className="p-8 bg-slate-50 rounded-2xl border border-slate-200 text-slate-700 leading-relaxed font-serif text-lg markdown-content shadow-inner"
+                  dangerouslySetInnerHTML={renderMarkdown(patterns)}
+                />
+              </div>
               
-              <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t">
                 <div>
-                  <h4 className="font-bold text-slate-800 mb-3">Diagnóstico Final</h4>
+                  <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <i className="fas fa-stamp text-indigo-600"></i>
+                    Diagnóstico Definitivo
+                  </h4>
                   <textarea 
-                    className="w-full p-4 border rounded-xl h-40"
-                    placeholder="Escriba el diagnóstico definitivo..."
+                    className="w-full p-4 border rounded-2xl h-48 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
+                    placeholder="Escriba aquí el diagnóstico para el informe oficial..."
                     value={patient.finalDiagnosis}
                     onChange={(e) => onUpdate({...patient, finalDiagnosis: e.target.value})}
                   />
                 </div>
                 <div>
-                  <h4 className="font-bold text-slate-800 mb-3">Tratamiento Sugerido</h4>
+                  <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <i className="fas fa-clipboard-list text-indigo-600"></i>
+                    Plan de Intervención
+                  </h4>
                   <textarea 
-                    className="w-full p-4 border rounded-xl h-40"
-                    placeholder="Escriba el plan de intervención..."
+                    className="w-full p-4 border rounded-2xl h-48 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all shadow-sm"
+                    placeholder="Escriba las recomendaciones y tratamiento..."
                     value={patient.suggestedTreatment}
                     onChange={(e) => onUpdate({...patient, suggestedTreatment: e.target.value})}
                   />
@@ -381,62 +455,80 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
       )}
 
       {activeTab === 'reports' && (
-        <div className="space-y-8">
+        <div className="space-y-8 animate-in slide-in-from-right duration-300">
           <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-              <i className="fas fa-file-medical text-indigo-600"></i>
-              Centro de Informes y Exportación
-            </h3>
+            <div className="flex justify-between items-start mb-8">
+              <div>
+                <h3 className="text-2xl font-bold text-slate-800 flex items-center gap-3">
+                  <i className="fas fa-file-export text-indigo-600"></i>
+                  Generación de Documentos Oficiales
+                </h3>
+                <p className="text-slate-500">Exporte los resultados en formato PDF profesional para adjuntar a la historia clínica física o enviar a los padres.</p>
+              </div>
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Card 1: Historia Completa */}
-              <div className="p-6 rounded-2xl border border-slate-100 bg-slate-50 flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-2xl mb-4">
-                  <i className="fas fa-address-book"></i>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="group p-8 rounded-2xl border border-slate-100 bg-white hover:border-indigo-200 hover:shadow-xl hover:shadow-indigo-50/50 transition-all flex flex-col h-full relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-50 rounded-bl-full opacity-30 -mr-6 -mt-6 group-hover:scale-125 transition-transform"></div>
+                <div className="w-16 h-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center text-2xl mb-6 shadow-lg shadow-indigo-100">
+                  <i className="fas fa-book-medical"></i>
                 </div>
-                <h4 className="font-bold text-slate-800 mb-2">Historia Completa</h4>
-                <p className="text-sm text-slate-500 mb-6">Expediente integral incluyendo datos básicos, desarrollo, resultados y diagnóstico.</p>
+                <h4 className="font-bold text-lg text-slate-800 mb-3">Historia Completa</h4>
+                <ul className="text-xs text-slate-500 space-y-2 mb-8 flex-1">
+                  <li className="flex gap-2"><i className="fas fa-check text-indigo-500"></i> Datos demográficos</li>
+                  <li className="flex gap-2"><i className="fas fa-check text-indigo-500"></i> Motivo de consulta</li>
+                  <li className="flex gap-2"><i className="fas fa-check text-indigo-500"></i> Resumen de todas las pruebas</li>
+                  <li className="flex gap-2"><i className="fas fa-check text-indigo-500"></i> Diagnóstico y Tratamiento</li>
+                </ul>
                 <button 
-                  onClick={() => generatePDF('full')}
-                  className="mt-auto w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2"
+                  onClick={() => generatePDF('history')}
+                  className="w-full py-3.5 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-100 active:scale-95"
                 >
-                  <i className="fas fa-download"></i> Descargar PDF
+                  <i className="fas fa-file-download"></i> Descargar PDF
                 </button>
               </div>
 
-              {/* Card 2: Cierre Clínico */}
-              <div className="p-6 rounded-2xl border border-slate-100 bg-slate-50 flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center text-2xl mb-4">
-                  <i className="fas fa-file-signature"></i>
+              <div className="group p-8 rounded-2xl border border-slate-100 bg-white hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-50/50 transition-all flex flex-col h-full relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-50 rounded-bl-full opacity-30 -mr-6 -mt-6 group-hover:scale-125 transition-transform"></div>
+                <div className="w-16 h-16 rounded-2xl bg-emerald-600 text-white flex items-center justify-center text-2xl mb-6 shadow-lg shadow-emerald-100">
+                  <i className="fas fa-award"></i>
                 </div>
-                <h4 className="font-bold text-slate-800 mb-2">Informe de Cierre</h4>
-                <p className="text-sm text-slate-500 mb-6">Resumen de hallazgos, diagnóstico definitivo y plan de tratamiento sugerido.</p>
+                <h4 className="font-bold text-lg text-slate-800 mb-3">Informe de Cierre</h4>
+                <ul className="text-xs text-slate-500 space-y-2 mb-8 flex-1">
+                  <li className="flex gap-2"><i className="fas fa-check text-emerald-500"></i> Consolidado de hallazgos</li>
+                  <li className="flex gap-2"><i className="fas fa-check text-emerald-500"></i> Análisis de patrones IA</li>
+                  <li className="flex gap-2"><i className="fas fa-check text-emerald-500"></i> Juicio Clínico Definitivo</li>
+                  <li className="flex gap-2"><i className="fas fa-check text-emerald-500"></i> Plan Terapéutico</li>
+                </ul>
                 <button 
                   onClick={() => generatePDF('final')}
-                  className="mt-auto w-full py-3 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
+                  className="w-full py-3.5 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-100 active:scale-95"
                 >
-                  <i className="fas fa-download"></i> Descargar PDF
+                  <i className="fas fa-file-pdf"></i> Informe de Cierre
                 </button>
               </div>
 
-              {/* Card 3: Baterías Individuales */}
-              <div className="p-6 rounded-2xl border border-slate-100 bg-slate-50 flex flex-col items-center text-center">
-                <div className="w-16 h-16 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-2xl mb-4">
-                  <i className="fas fa-microscope"></i>
+              <div className="group p-8 rounded-2xl border border-slate-100 bg-white hover:border-amber-200 hover:shadow-xl hover:shadow-amber-50/50 transition-all flex flex-col h-full relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-amber-50 rounded-bl-full opacity-30 -mr-6 -mt-6 group-hover:scale-125 transition-transform"></div>
+                <div className="w-16 h-16 rounded-2xl bg-amber-500 text-white flex items-center justify-center text-2xl mb-6 shadow-lg shadow-amber-100">
+                  <i className="fas fa-tasks"></i>
                 </div>
-                <h4 className="font-bold text-slate-800 mb-2">Pruebas Específicas</h4>
-                <p className="text-sm text-slate-500 mb-6">Descarga informes técnicos detallados para cada una de las baterías aplicadas.</p>
-                <div className="w-full space-y-2 mt-auto">
+                <h4 className="font-bold text-lg text-slate-800 mb-3">Pruebas Individuales</h4>
+                <p className="text-xs text-slate-500 mb-6">Informes técnicos individuales por cada batería aplicada.</p>
+                <div className="w-full space-y-2.5 overflow-y-auto max-h-[160px] pr-1">
                   {TEST_BATTERIES.filter(b => patient.testResults[b.id]).map(b => (
                     <button 
                       key={b.id}
                       onClick={() => generatePDF('battery', b)}
-                      className="w-full py-2 bg-white border border-slate-200 text-slate-600 rounded-lg text-xs font-bold hover:border-amber-400 hover:text-amber-700 transition-all flex items-center justify-center gap-2"
+                      className="w-full py-2.5 px-3 bg-slate-50 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-bold hover:bg-amber-50 hover:border-amber-400 transition-all flex items-center justify-between group/btn"
                     >
-                      {b.name} <i className="fas fa-file-download opacity-40"></i>
+                      <span className="truncate mr-2">{b.name}</span>
+                      <i className="fas fa-download opacity-0 group-hover/btn:opacity-100 text-amber-600 transition-opacity"></i>
                     </button>
                   ))}
-                  {Object.keys(patient.testResults).length === 0 && <p className="text-[10px] text-slate-400 italic">No hay baterías aplicadas aún.</p>}
+                  {Object.keys(patient.testResults).length === 0 && (
+                    <div className="text-center py-4 text-[10px] text-slate-400 italic">No hay resultados registrados.</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -445,7 +537,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
       )}
 
       {activeTab === 'files' && (
-        <div className="bg-white p-8 rounded-2xl border border-slate-200">
+        <div className="bg-white p-8 rounded-2xl border border-slate-200 animate-in fade-in duration-300">
            <div className="flex justify-between items-center mb-6">
             <h3 className="text-xl font-bold text-slate-800">Archivos Adjuntos</h3>
             <label className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold cursor-pointer hover:bg-indigo-700 transition-colors">
@@ -467,36 +559,45 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
             {patient.files.map(file => (
-              <div key={file.id} className="p-4 border rounded-xl text-center group relative hover:border-indigo-300">
+              <div key={file.id} className="p-4 border rounded-xl text-center group relative hover:border-indigo-300 bg-slate-50">
                 <i className={`fas ${file.type.includes('image') ? 'fa-file-image text-emerald-500' : 'fa-file-pdf text-red-500'} text-4xl mb-2`}></i>
                 <p className="text-xs font-medium truncate mb-1">{file.name}</p>
                 <p className="text-[10px] text-slate-400">{file.date}</p>
+                <div className="absolute inset-0 bg-slate-900/5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"></div>
               </div>
             ))}
+            {patient.files.length === 0 && (
+              <div className="col-span-full py-12 text-center text-slate-300 italic text-sm">No hay archivos adjuntos.</div>
+            )}
           </div>
         </div>
       )}
 
-      {/* Observation Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-xl font-bold mb-4">Observaciones Clínicas</h3>
-            <div className="space-y-4 max-h-[300px] overflow-y-auto mb-4 p-2 border rounded-lg bg-slate-50">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl animate-in zoom-in-95 duration-300">
+            <h3 className="text-xl font-bold mb-6 text-slate-800 flex items-center gap-2">
+              <i className="fas fa-sticky-note text-amber-500"></i>
+              Bitácora de Observaciones
+            </h3>
+            <div className="space-y-4 max-h-[350px] overflow-y-auto mb-6 p-4 border rounded-2xl bg-slate-50/50 shadow-inner">
               {patient.observations.length > 0 ? patient.observations.map((o, i) => (
-                <div key={i} className="text-sm p-3 bg-white rounded-lg border border-slate-100 shadow-sm">{o}</div>
-              )) : <p className="text-sm text-slate-400 text-center py-4">No hay observaciones.</p>}
+                <div key={i} className="text-sm p-4 bg-white rounded-xl border border-slate-100 shadow-sm relative group">
+                  <div className="absolute top-2 right-2 text-[10px] text-slate-300 font-bold">OBS #{i+1}</div>
+                  {o}
+                </div>
+              )) : <p className="text-sm text-slate-400 text-center py-10">Inicie el registro de observaciones aquí.</p>}
             </div>
             <textarea 
-              className="w-full p-3 border rounded-xl text-sm mb-4"
+              className="w-full p-4 border rounded-2xl text-sm mb-6 outline-none focus:ring-2 focus:ring-amber-400 transition-all bg-white shadow-sm"
               rows={3}
-              placeholder="Nueva observación..."
+              placeholder="Escriba una nueva observación clínica..."
               value={newObs}
               onChange={(e) => setNewObs(e.target.value)}
             />
-            <div className="flex gap-2">
-              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-2 rounded-lg text-slate-600 hover:bg-slate-100 transition-colors">Cerrar</button>
-              <button onClick={addObservation} className="flex-1 py-2 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">Agregar</button>
+            <div className="flex gap-3">
+              <button onClick={() => setIsModalOpen(false)} className="flex-1 py-3 rounded-xl text-slate-500 font-bold hover:bg-slate-100 transition-colors">Cancelar</button>
+              <button onClick={addObservation} className="flex-1 py-3 rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600 transition-all shadow-lg shadow-amber-100 active:scale-95">Guardar Nota</button>
             </div>
           </div>
         </div>

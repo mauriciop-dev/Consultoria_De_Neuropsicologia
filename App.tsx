@@ -5,11 +5,13 @@ import Dashboard from './components/Dashboard';
 import PatientForm from './components/PatientForm';
 import PatientWorkspace from './components/PatientWorkspace';
 import AIChatPanel from './components/AIChatPanel';
+import ReportsCenter from './components/ReportsCenter';
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'dashboard' | 'new-patient' | 'workspace'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'new-patient' | 'workspace' | 'reports'>('dashboard');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [currentPatient, setCurrentPatient] = useState<Patient | null>(null);
+  const [workspaceTab, setWorkspaceTab] = useState('summary');
 
   // Load initial mockup data
   useEffect(() => {
@@ -98,6 +100,7 @@ const App: React.FC = () => {
 
   const handleSelectPatient = (patient: Patient) => {
     setCurrentPatient(patient);
+    setWorkspaceTab('summary');
     setView('workspace');
   };
 
@@ -106,15 +109,24 @@ const App: React.FC = () => {
     setCurrentPatient(updated);
   };
 
+  const handleGoToReports = () => {
+    if (currentPatient) {
+      setWorkspaceTab('reports');
+      setView('workspace');
+    } else {
+      setView('reports');
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 h-16 flex items-center px-6 sticky top-0 z-40">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200">
+          <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-200 cursor-pointer" onClick={() => setView('dashboard')}>
             <i className="fas fa-brain text-white text-xl"></i>
           </div>
-          <div>
+          <div className="cursor-pointer" onClick={() => setView('dashboard')}>
             <h1 className="font-extrabold text-slate-800 tracking-tight">NeuroAI <span className="text-indigo-600">Clinic</span></h1>
             <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
               <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
@@ -124,10 +136,15 @@ const App: React.FC = () => {
         </div>
         
         <nav className="ml-12 hidden md:flex gap-6">
-          <button onClick={() => setView('dashboard')} className={`text-sm font-semibold transition-colors ${view === 'dashboard' ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}>Pacientes</button>
           <button 
-            onClick={() => currentPatient ? setView('workspace') : setView('dashboard')}
-            className={`text-sm font-semibold transition-colors ${view === 'workspace' ? 'text-indigo-600' : 'text-slate-500 hover:text-slate-800'}`}
+            onClick={() => setView('dashboard')} 
+            className={`text-sm font-semibold transition-colors ${view === 'dashboard' ? 'text-indigo-600 border-b-2 border-indigo-600 py-1' : 'text-slate-500 hover:text-slate-800'}`}
+          >
+            Pacientes
+          </button>
+          <button 
+            onClick={handleGoToReports}
+            className={`text-sm font-semibold transition-colors ${(view === 'reports' || (view === 'workspace' && workspaceTab === 'reports')) ? 'text-indigo-600 border-b-2 border-indigo-600 py-1' : 'text-slate-500 hover:text-slate-800'}`}
           >
             Informes
           </button>
@@ -163,6 +180,16 @@ const App: React.FC = () => {
           <PatientWorkspace 
             patient={currentPatient} 
             onUpdate={handleUpdatePatient}
+            onBack={() => setView('dashboard')}
+            activeTab={workspaceTab}
+            onTabChange={setWorkspaceTab}
+          />
+        )}
+
+        {view === 'reports' && (
+          <ReportsCenter 
+            patients={patients} 
+            onSelectPatient={handleSelectPatient} 
             onBack={() => setView('dashboard')}
           />
         )}
