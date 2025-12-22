@@ -1,0 +1,8 @@
+{
+  "name": "NeuroAI Clinic MVP",
+  "description": "A comprehensive neuropsychological platform for children, featuring AI-driven diagnostics, test battery management, and clinical pattern recognition.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
