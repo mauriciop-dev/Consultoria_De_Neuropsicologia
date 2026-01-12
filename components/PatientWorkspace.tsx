@@ -43,15 +43,27 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
 
   const triggerAIAnalysis = async (batteryId: string) => {
     const battery = TEST_BATTERIES.find(b => b.id === batteryId);
-    const results = patient.testResults[batteryId];
-    if (!battery || !results) return;
+    if (!battery) return;
 
+    // Obtenemos los resultados actuales o creamos unos vacíos para enviar a la IA
+    const results = patient.testResults[batteryId] || { scores: {}, responses: {} };
+    
+    console.log(`Iniciando análisis IA para: ${battery.name}`, results);
     setAnalyzingBatteryId(batteryId);
+    
     try {
       const summary = await analyzeBatteryResult(battery.name, battery.tasks, results);
+      console.log("Resumen recibido de IA:", summary);
+      
       const updatedResults = { ...patient.testResults };
-      updatedResults[batteryId].aiSummary = summary;
+      updatedResults[batteryId] = {
+        ...results,
+        aiSummary: summary
+      };
+      
       onUpdate({ ...patient, testResults: updatedResults });
+    } catch (error) {
+      console.error("Error crítico en triggerAIAnalysis:", error);
     } finally {
       setAnalyzingBatteryId(null);
     }
@@ -197,7 +209,8 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
   }));
 
   const renderMarkdown = (content: string) => {
-    const html = marked.parse(content);
+    // Aseguramos que marked.parse devuelva un string síncrono
+    const html = marked.parse(content) as string;
     return { __html: html };
   };
 
@@ -367,12 +380,12 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
           </aside>
 
           <main className="flex-1 space-y-6">
-            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm relative min-h-[500px]">
               {analyzingBatteryId === selectedBattery && (
-                <div className="absolute inset-0 bg-white/70 backdrop-blur-[1px] z-20 flex flex-col items-center justify-center rounded-2xl">
-                  <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-3"></div>
-                  <p className="text-indigo-700 font-bold text-sm">Analizando respuestas de la batería...</p>
-                  <p className="text-slate-400 text-[10px] mt-1 uppercase tracking-widest font-bold">Por favor espere</p>
+                <div className="absolute inset-0 bg-white/70 backdrop-blur-[2px] z-20 flex flex-col items-center justify-center rounded-2xl transition-all">
+                  <div className="w-14 h-14 border-4 border-indigo-100 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+                  <p className="text-indigo-700 font-bold text-lg">Procesando respuestas...</p>
+                  <p className="text-slate-400 text-xs mt-1 uppercase tracking-widest font-bold">La IA está analizando los hallazgos clínicos</p>
                 </div>
               )}
               
@@ -394,7 +407,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
 
               <div className="space-y-6">
                 {currentBattery.tasks.map(task => (
-                  <div key={task.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                  <div key={task.id} className="p-4 bg-slate-50 rounded-xl border border-slate-100 transition-colors hover:bg-slate-100/50">
                     <div className="flex justify-between items-center mb-3">
                       <h4 className="font-bold text-slate-700">{task.title}</h4>
                       <div className="flex gap-1">
@@ -402,7 +415,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                           <button 
                             key={val}
                             onClick={() => handleScoreChange(selectedBattery, task.id, val)}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs transition-all ${currentResult.scores[task.id] === val ? 'bg-indigo-600 text-white' : 'bg-white border text-slate-400 hover:border-indigo-300'}`}
+                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs transition-all ${currentResult.scores[task.id] === val ? 'bg-indigo-600 text-white shadow-md' : 'bg-white border text-slate-400 hover:border-indigo-300'}`}
                           >
                             {val}
                           </button>
@@ -414,7 +427,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                       <input 
                         type="text" 
                         placeholder="Registro de respuesta..."
-                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none focus:ring-1 focus:ring-indigo-500 transition-all"
+                        className="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500/20 transition-all"
                         value={currentResult.responses[task.id] || ''}
                         onChange={(e) => handleResponseChange(selectedBattery, task.id, e.target.value)}
                       />
@@ -424,7 +437,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                           <button 
                             key={opt}
                             onClick={() => handleResponseChange(selectedBattery, task.id, opt)}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${currentResult.responses[task.id] === opt ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-500 hover:border-slate-300'}`}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${currentResult.responses[task.id] === opt ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-500 hover:border-slate-300'}`}
                           >
                             {opt}
                           </button>
@@ -444,10 +457,10 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                   <button 
                     onClick={() => triggerAIAnalysis(selectedBattery)}
                     disabled={analyzingBatteryId !== null}
-                    className={`text-xs font-bold transition-colors uppercase tracking-widest flex items-center gap-2 ${analyzingBatteryId ? 'text-slate-400 cursor-not-allowed' : 'text-indigo-600 hover:text-indigo-800'}`}
+                    className={`px-4 py-2 rounded-lg text-xs font-bold transition-all uppercase tracking-widest flex items-center gap-2 ${analyzingBatteryId ? 'text-slate-300 cursor-not-allowed bg-slate-50' : 'text-indigo-600 hover:bg-indigo-50 active:scale-95'}`}
                   >
                     {analyzingBatteryId === selectedBattery ? (
-                      <><i className="fas fa-circle-notch fa-spin"></i> Analizando respuestas...</>
+                      <><i className="fas fa-circle-notch fa-spin"></i> Generando...</>
                     ) : (
                       <><i className="fas fa-magic"></i> Analizar Batería</>
                     )}
@@ -455,12 +468,12 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                 </div>
                 {currentResult.aiSummary ? (
                    <div 
-                    className="bg-indigo-50/50 p-4 rounded-xl text-sm text-indigo-900 border border-indigo-100 leading-relaxed min-h-[60px] markdown-content"
+                    className="bg-indigo-50/50 p-6 rounded-2xl text-sm text-slate-700 border border-indigo-100 leading-relaxed min-h-[100px] markdown-content shadow-inner"
                     dangerouslySetInnerHTML={renderMarkdown(currentResult.aiSummary)}
                   />
                 ) : (
-                  <div className="bg-indigo-50/50 p-4 rounded-xl text-sm text-indigo-900 italic border border-indigo-100 leading-relaxed min-h-[60px] flex items-center justify-center">
-                    No se ha generado interpretación IA para esta prueba.
+                  <div className="bg-slate-50 p-8 rounded-2xl text-sm text-slate-400 italic border border-dashed border-slate-200 leading-relaxed min-h-[100px] flex items-center justify-center">
+                    No se ha generado interpretación IA para esta prueba. Haga clic en el botón superior para procesar los datos.
                   </div>
                 )}
               </div>
@@ -480,7 +493,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
               <button 
                 onClick={triggerPatternRecognition}
                 disabled={isAnalyzing}
-                className={`px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold transition-all shadow-lg flex items-center gap-2 ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95'}`}
+                className={`px-6 py-3 bg-indigo-600 text-white rounded-xl font-bold transition-all shadow-lg flex items-center gap-2 ${isAnalyzing ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95 hover:shadow-indigo-200'}`}
               >
                 {isAnalyzing ? <i className="fas fa-circle-notch fa-spin"></i> : <i className="fas fa-brain"></i>}
                 {isAnalyzing ? 'Correlacionando...' : 'Identificar Patrones'}
@@ -503,14 +516,14 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
               <div className="h-4 bg-slate-100 rounded w-3/4 animate-pulse"></div>
               <div className="h-4 bg-slate-100 rounded w-1/2 animate-pulse"></div>
               <div className="h-4 bg-slate-100 rounded w-full animate-pulse"></div>
-              <p className="text-center text-xs text-indigo-400 animate-pulse uppercase font-bold tracking-widest">Consultando experto virtual y procesando resultados...</p>
+              <p className="text-center text-xs text-indigo-400 animate-pulse uppercase font-bold tracking-widest mt-8">Consultando experto virtual y procesando resultados multi-dominio...</p>
             </div>
           ) : (
             <div className="space-y-12">
               <div className="prose prose-indigo max-w-none">
                 <div 
                   className="p-8 bg-slate-50 rounded-2xl border border-slate-200 text-slate-700 leading-relaxed font-serif text-lg markdown-content shadow-inner"
-                  dangerouslySetInnerHTML={renderMarkdown(patterns)}
+                  dangerouslySetInnerHTML={renderMarkdown(patterns || '')}
                 />
               </div>
               
