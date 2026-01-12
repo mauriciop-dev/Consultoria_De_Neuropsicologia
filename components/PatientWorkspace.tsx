@@ -227,33 +227,124 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
       </div>
 
       {activeTab === 'summary' && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-300">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200">
-            <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">Diagnóstico y Motivo</h3>
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs font-bold text-slate-400 uppercase">Motivo de Consulta</label>
-                <p className="text-sm text-slate-700 mt-1">{patient.consultationReason || 'No especificado'}</p>
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
+                <i className="fas fa-notes-medical text-indigo-500"></i>
+                Diagnóstico y Motivo
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Motivo de Consulta</label>
+                  <p className="text-sm text-slate-700 mt-1 font-medium">{patient.consultationReason || 'No especificado'}</p>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Diagnóstico Inicial</label>
+                  <textarea 
+                    className="w-full mt-2 p-3 border rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
+                    rows={3}
+                    placeholder="Escriba el diagnóstico presuntivo..."
+                    value={patient.diagnosisInitial}
+                    onChange={(e) => onUpdate({...patient, diagnosisInitial: e.target.value})}
+                  />
+                </div>
               </div>
-              <div>
-                <label className="text-xs font-bold text-slate-400 uppercase">Diagnóstico Inicial</label>
-                <textarea 
-                  className="w-full mt-2 p-3 border rounded-xl text-sm"
-                  placeholder="Escriba el diagnóstico presuntivo..."
-                  value={patient.diagnosisInitial}
-                  onChange={(e) => onUpdate({...patient, diagnosisInitial: e.target.value})}
-                />
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
+                <i className="fas fa-baby text-indigo-500"></i>
+                Hitos del Desarrollo
+              </h3>
+              <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-sm">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Peso al Nacer</label>
+                  <span className="font-semibold text-slate-700">{patient.weight || 'N/A'}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Test de Apgar</label>
+                  <span className="font-semibold text-slate-700">{patient.apgarScore || 'N/A'}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Control Cefálico</label>
+                  <span className="font-semibold text-slate-700">{patient.headControlAge || 'N/A'}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Gateo</label>
+                  <span className="font-semibold text-slate-700">{patient.crawlingAge || 'N/A'}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Locomoción (Camino)</label>
+                  <span className="font-semibold text-slate-700">{patient.walkingAge || 'N/A'}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Parto Planeado</label>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${patient.plannedPregnancy ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {patient.plannedPregnancy ? 'SÍ' : 'NO'}
+                  </span>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl border border-slate-200">
-            <h3 className="font-bold text-slate-800 mb-4 border-b pb-2">Hitos del Desarrollo</h3>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div><span className="text-slate-400">Peso:</span> {patient.weight}</div>
-              <div><span className="text-slate-400">Apgar:</span> {patient.apgarScore}</div>
-              <div><span className="text-slate-400">Gateo:</span> {patient.crawlingAge}</div>
-              <div><span className="text-slate-400">Locomoción:</span> {patient.walkingAge}</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+             <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
+                <i className="fas fa-users text-indigo-500"></i>
+                Contexto Familiar
+              </h3>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Madre</label>
+                    <p className="text-xs text-slate-700 mt-1 font-semibold">{patient.motherName || 'No registrado'}</p>
+                    <p className="text-[10px] text-slate-500 italic">{patient.motherOccupation || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase block">Padre</label>
+                    <p className="text-xs text-slate-700 mt-1 font-semibold">{patient.fatherName || 'No registrado'}</p>
+                    <p className="text-[10px] text-slate-500 italic">{patient.fatherOccupation || 'N/A'}</p>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block">Vive con:</label>
+                  <p className="text-sm text-slate-700 mt-1 font-medium">{patient.livesWith || 'No especificado'}</p>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block">Hermanos:</label>
+                  <p className="text-sm text-slate-700 mt-1 font-medium">{patient.siblings || 'Hijo único'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <h3 className="font-bold text-slate-800 mb-4 border-b pb-2 flex items-center gap-2">
+                <i className="fas fa-info-circle text-indigo-500"></i>
+                Información Adicional
+              </h3>
+              <div className="grid grid-cols-2 gap-y-4 gap-x-6 text-sm">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">EPS / Aseguradora</label>
+                  <span className="font-semibold text-slate-700">{patient.eps || 'N/A'}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Escolaridad</label>
+                  <span className="font-semibold text-slate-700">{patient.schooling || 'N/A'}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Lateralidad</label>
+                  <span className="font-semibold text-slate-700">{patient.laterality === 'Right' ? 'Derecha' : patient.laterality === 'Left' ? 'Izquierda' : 'Ambidiestro'}</span>
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Fecha Registro</label>
+                  <span className="font-semibold text-slate-700">{new Date(patient.date).toLocaleDateString()}</span>
+                </div>
+                <div className="col-span-2">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase block mb-1">Dirección / Residencia</label>
+                  <span className="font-semibold text-slate-700">{patient.address || 'No registrada'}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -563,12 +654,8 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
                 <i className={`fas ${file.type.includes('image') ? 'fa-file-image text-emerald-500' : 'fa-file-pdf text-red-500'} text-4xl mb-2`}></i>
                 <p className="text-xs font-medium truncate mb-1">{file.name}</p>
                 <p className="text-[10px] text-slate-400">{file.date}</p>
-                <div className="absolute inset-0 bg-slate-900/5 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"></div>
               </div>
             ))}
-            {patient.files.length === 0 && (
-              <div className="col-span-full py-12 text-center text-slate-300 italic text-sm">No hay archivos adjuntos.</div>
-            )}
           </div>
         </div>
       )}
