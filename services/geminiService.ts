@@ -1,7 +1,8 @@
 
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 
-const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// Se inicializa siguiendo estrictamente las guías de uso de la SDK
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const analyzeBatteryResult = async (batteryName: string, tasks: any[], results: any) => {
   const ai = getAI();
@@ -34,7 +35,7 @@ export const findPatterns = async (allTestResults: any, patientInfo: any) => {
     Resultados Pruebas: ${JSON.stringify(allTestResults)}
     
     Identifica patrones correlacionando diferentes respuestas. 
-    Ejemplo: "La dificultad en memoria visual (Batería 3) junto con la falla en planeación (Batería 4) sugiere un patrón de déficit en memoria de trabajo operativa".
+    Ejemplo: "La dificultad en memoria visual junto con la falla en planeación sugiere un patrón de déficit en memoria de trabajo operativa".
     Indica patrones sugeridos para el diagnóstico final.
   `;
 
