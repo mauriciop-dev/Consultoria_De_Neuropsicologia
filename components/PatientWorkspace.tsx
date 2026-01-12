@@ -181,7 +181,7 @@ const PatientWorkspace: React.FC<PatientWorkspaceProps> = ({ patient, onUpdate, 
     doc.setDrawColor(0, 0, 0);
     doc.line(margin, y, margin + 60, y);
     y += 5;
-    addText('Dra. Flor Marina', 10, true);
+    addText('Dr. Carl Jung', 10, true);
     addText('Neuropsicóloga Infantil', 9);
 
     doc.save(`NeuroAI_${type}_${patient.name.replace(/\s+/g, '_')}.pdf`);

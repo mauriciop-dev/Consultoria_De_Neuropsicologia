@@ -514,7 +514,7 @@ const App: React.FC = () => {
 
         <div className="ml-auto flex items-center gap-4">
            <div className="hidden sm:block text-right">
-             <p className="text-sm font-bold text-slate-800">Dra. Flor Marina</p>
+             <p className="text-sm font-bold text-slate-800">Dr. Carl Jung</p>
              <p className="text-[10px] text-slate-400 font-medium">Neuropsicóloga Infantil</p>
            </div>
            <div className="w-10 h-10 rounded-full bg-slate-100 border-2 border-white shadow-sm flex items-center justify-center overflow-hidden">
